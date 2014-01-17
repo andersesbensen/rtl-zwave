@@ -46,7 +46,7 @@ def bandpass_firwin(ntaps, lowcut, highcut, fs, window='hamming'):
 samp = 2024000
 
 # f =  open('test_sample3', 'r')
-f = open('zwave_100k.bin', 'r')
+f = open('hello100k.bin', 'r')
 
 n = 0
 
