@@ -113,18 +113,27 @@ n = 0
 s1 = 0
 s2 = 0
 
+f=open("yyyy","w")
 for s in sig:
-    p = np.abs(s) 
+    p = np.abs(s1) 
     if(p > 0):
-        x.append(n)        
         ds = (s - s2) / 2 
-        q = (np.conj(s1) * ds) / (p * p)
-        y2.append(-q.imag)
-        s2 = s1
-        s1 = s
-        
+        q = (np.conj(s1) * ds)  
+        k = -q.imag/(p * p)
+        #f.write("%e %e\n" % (k,k))
+    else:
+        k=0
+
+    s2 = s1
+    s1 = s
+
+    x.append(n)        
+    y2.append(k)
+    f.write("%e\n" % k)
+  
     n = n + 1
 
+f.close()
 
 Wn = 120.0e3 / float(samp)
 b, a = signal.butter(6, Wn, 'low')
