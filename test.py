@@ -31,53 +31,79 @@ def bits2bytes(bits):
             by = 0
     return r
   
-
-# Several flavors of bandpass FIR filters.
-
-def bandpass_firwin(ntaps, lowcut, highcut, fs, window='hamming'):
+def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
-    taps = firwin(ntaps, [lowcut, highcut], nyq=nyq, pass_zero=False,
-                  window=window, scale=False)
-    return taps  
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = signal.butter(order, [low, high], btype='band')
+    return b, a
+
+
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    y = signal.lfilter(b, a, data)
+    return y
+
+
 
 # fEU1	869.85	bw 300khz
 # fEU2	868.40	bw 400khz
  
 samp = 2024000
 
-# f =  open('test_sample3', 'r')
-f = open('hello100k.bin', 'r')
+#f =  open('test_sample4', 'r')
+f =  open(sys.argv[1], 'r')
+#f = open('zwave_100k.bin', 'r')
 
 n = 0
 
-x = []
-y1 = []
-y2 = []
-sig = []
 
-while(True):
+sigre = []
+sigim = []
+try:
+  while(True):
     n = n + 1
     (re, im) = unpack("2B", f.read(2))
+    
     re = re - 127
     im = im - 127
-    
-    s = complex(re, im)
-    sig.append(s)
-  
-    if(n >= 500000):
-        break;
+
+    sigre.append(re)
+    sigim.append(im)
+
+    #if(n >= 50000):
+    #    break;
+
+except Exception:
+  print "read error"
+
+sig = np.array(sigre) + 1j*np.array(sigim)
+
+sig = butter_bandpass_filter(sig,350e3,500e3,samp)
+
+#Wn = 300.0e3 / float(samp)
+#b, a = signal.butter(6, Wn, 'low')
+#sig = signal.lfilter(b, a, sig)
+
+plt.plot(sig.real,label="real")
+plt.plot(sig.imag,label="imag")
+plt.xlabel('Sample')
+plt.title("RAW sampled data")
+plt.legend()
+plt.show()
   
 
-# sp = np.fft.fft(sig)
-# freq = np.fft.fftfreq(len(sig)) * samp
-# plt.plot(freq, sp.real, 'g-', freq, sp.imag, 'b-')
-# plt.show()
+sp = np.fft.fft(sig)
+freq = np.fft.fftfreq(len(sig)) * samp
+plt.plot(freq, sp.real, 'g-', freq, sp.imag, 'b-')
+
+plt.xlabel('Frequency')
+plt.title("Spectrum of RAW sampled data")
+plt.show()
 
 sold = 0
 
 
-
-taps = bandpass_firwin(128, 400e3 - 150e3, 400e3 + 150e3, samp)
 '''
 Algorithm
 
@@ -109,37 +135,56 @@ wc + p will show up as a DC component in the s'*conj(s) / |s|^2 function.
 '''
 
 # FSK decoder
-n = 0
-s1 = 0
-s2 = 0
+def aes_fsk(sig):
+  s1 = 0
+  s2 = 0
+  y2=[]
+  kk=0
+  for s in sig:
+      p = np.abs(s1) 
+      if(p > 0):
+          ds = (s - s2) / 2 
+          q = (np.conj(s1) * ds)  
+          k = -q.imag/(p * p)
 
-f=open("yyyy","w")
-for s in sig:
-    p = np.abs(s1) 
-    if(p > 0):
-        ds = (s - s2) / 2 
-        q = (np.conj(s1) * ds)  
-        k = -q.imag/(p * p)
-        #f.write("%e %e\n" % (k,k))
-    else:
-        k=0
+          if(k > pi or k < -pi):
+            k=kk
+          else:
+            kk = k
+      else:
+          k=0
 
-    s2 = s1
-    s1 = s
+      s2 = s1
+      s1 = s
 
-    x.append(n)        
+      y2.append(k)
+  return y2
+
+
+# FSK decoder
+def atan_fsk(sig):
+  q1 = 0
+  q2 = 0
+  y2=[]
+  for s in sig:
+    q = np.angle(s)
+    k = -(q - q2) / 2.0 
+    q2 = q1
+    q1 = q
+
     y2.append(k)
-    f.write("%e\n" % k)
-  
-    n = n + 1
+  return y2
 
-f.close()
+y2 = aes_fsk(sig)
+#y2 = atan_fsk(sig)
 
-Wn = 120.0e3 / float(samp)
+Wn = 101e3 / float(samp)
+#Wn = 2*9.6e3 / float(samp)
 b, a = signal.butter(6, Wn, 'low')
 y1 = signal.lfilter(b, a, y2)
 
-Wn = 12.0e3 / float(samp)
+Wn = 10.1e3 / float(samp)
+#Wn = 2.0e3 / float(samp)
 b, a = signal.butter(3, Wn, 'low')
 print b
 print a
@@ -169,13 +214,28 @@ dif = []
 last_logic = False
 lead_in = 10
 
+n=0
 for s in y1:
     logic = (s - wc) > 0
-    if(lock_det[n] < 0):    #DO this does not hold...
+    
+    #If we are in bitlock mode, make sure that the signal does not derivate by more than
+    # 1/2 seperation, TODO calculate 1/2 seperation
+    if(state == S_BITLOCK):
+        if(fabs(wc - lock_det[n]) < 0.1):
+            signal=True
+        else:
+            signal=False
+    elif(fabs(lock_det[n]) > 0.01):
+        signal=True
+    else:
+        signal = False
+
+    if(signal):
         if(state == S_IDLE):
             state = S_PREAMP
             pre_cnt = 0
             pre_len = 0
+            print "Frame start",n
         elif(state == S_PREAMP):
             wc = lock_det[n]            
             pre_len = pre_len + 1
@@ -185,6 +245,7 @@ for s in y1:
             if(pre_cnt == lead_in):  # skip the first lead_in
                 pre_len = 0;
             elif(pre_cnt > 30):
+                print "Center freq ",wc/(2.0*pi)*samp
                 state = S_BITLOCK
                 state_b = B_PREAMP
                 
@@ -192,7 +253,7 @@ for s in y1:
                 #print bit_len
                 bit_cnt = bit_len / 2.0
                 last_bit = not logic
-        elif(state == S_BITLOCK):
+        elif(state == S_BITLOCK): #Preamble has been detected now we are processing bits not samples            
             if(logic ^ last_logic):
                 bit_cnt = bit_len / 2.0 #Re-sync on edges
             else:
@@ -210,7 +271,7 @@ for s in y1:
                             b_cnt = 0
                             state_b = B_DATA
                     else:
-                        print "SOF 0 error",b_cnt
+                        print "SOF 0 error",b_cnt,n
                         state = S_IDLE
                 elif(state_b == B_SOF1):
                     if( logic ):
@@ -219,9 +280,10 @@ for s in y1:
                             b_cnt = 0
                             state_b = B_SOF0
                     else:
-                        print "SOF 1 error"
+                        print "SOF 1 error",b_cnt,n
                         state = S_IDLE
                 elif(state_b == B_DATA):
+                    print "Data",n
                     # print logic
                     bits.append(logic)
                 
@@ -241,10 +303,10 @@ for s in y1:
     n = n + 1
 
 # print len(dif)
-plt.plot(x, y2)
-plt.plot(x, y1)
-plt.plot(x, dif)
-plt.plot(x, lock_det)
+plt.plot(y2)
+plt.plot(y1)
+plt.plot(dif)
+plt.plot(lock_det)
 
 plt.show()
 

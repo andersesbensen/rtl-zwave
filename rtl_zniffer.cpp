@@ -1,26 +1,24 @@
 #include<stdio.h>
 #include<complex>
-
+#include <unistd.h>
 
 using namespace std;
 
-extern void write_wiresark(unsigned char *f, unsigned char len,int speed);
+extern void write_wiresark(unsigned char *f, unsigned char len, int speed);
 extern int open_wirreshark();
-
 
 void zwave_print(unsigned char* data, int len) {
 
-	for(int i=0; i < len; i++) {
-		printf("%.2x",data[i]);
+	for (int i = 0; i < len; i++) {
+		printf("%.2x", data[i]);
 	}
 	printf("\n");
 }
 
-
 /*
  Algorithm
 
- The imput signal is on the form s(t) = a*exp(-i*w*t+p)
+ The input signal is on the form s(t) = a*exp(-i*w*t+p)
  where a is the amplitude
  w if the angular frequncy, (in reality w is a function of t but we will ignore that)
  p if the phase difference
@@ -74,63 +72,109 @@ static inline double fsk_demodulator(int re, int im) {
 }
 
 /**
- * Lowpass filter butterworth order 6 cutoff 120khz
+ * 300khz filter, order 6
+ */
+#define NZEROS3 6
+#define NPOLES3 6
+#define GAIN3   4.343810414e+02
+
+static inline double bw_filter_re(double in) {
+	static float xv[NZEROS3 + 1], yv[NPOLES3 + 1];
+
+	xv[0] = xv[1];
+	xv[1] = xv[2];
+	xv[2] = xv[3];
+	xv[3] = xv[4];
+	xv[4] = xv[5];
+	xv[5] = xv[6];
+	xv[6] = in / GAIN3;
+	yv[0] = yv[1];
+	yv[1] = yv[2];
+	yv[2] = yv[3];
+	yv[3] = yv[4];
+	yv[4] = yv[5];
+	yv[5] = yv[6];
+	yv[6] = (xv[0] + xv[6]) + 6 * (xv[1] + xv[5]) + 15 * (xv[2] + xv[4])
+			+ 20 * xv[3] + (-0.0240893177 * yv[0]) + (0.2295932200 * yv[1])
+			+ (-0.9503812438 * yv[2]) + (2.1990214950 * yv[3])
+			+ (-3.0652859176 * yv[4]) + (2.4638056838 * yv[5]);
+	return yv[6];
+
+}
+
+static inline double bw_filter_im(double in) {
+	static float xv[NZEROS3 + 1], yv[NPOLES3 + 1];
+
+	xv[0] = xv[1];
+	xv[1] = xv[2];
+	xv[2] = xv[3];
+	xv[3] = xv[4];
+	xv[4] = xv[5];
+	xv[5] = xv[6];
+	xv[6] = in / GAIN3;
+	yv[0] = yv[1];
+	yv[1] = yv[2];
+	yv[2] = yv[3];
+	yv[3] = yv[4];
+	yv[4] = yv[5];
+	yv[5] = yv[6];
+	yv[6] = (xv[0] + xv[6]) + 6 * (xv[1] + xv[5]) + 15 * (xv[2] + xv[4])
+			+ 20 * xv[3] + (-0.0240893177 * yv[0]) + (0.2295932200 * yv[1])
+			+ (-0.9503812438 * yv[2]) + (2.1990214950 * yv[3])
+			+ (-3.0652859176 * yv[4]) + (2.4638056838 * yv[5]);
+	return yv[6];
+
+}
+
+/**
+ * Lowpass filter butterworth order 3 cutoff 100khz
  */
 static inline double freq_filter(double in) {
-#define NZEROS1 6
-#define NPOLES1 6
-#define GAIN1   4.914064842e+04
-	static double xv[NZEROS1 + 1], yv[NPOLES1 + 1];
-	{
-		xv[0] = xv[1];
-		xv[1] = xv[2];
-		xv[2] = xv[3];
-		xv[3] = xv[4];
-		xv[4] = xv[5];
-		xv[5] = xv[6];
-		xv[6] = in / GAIN1;
-		yv[0] = yv[1];
-		yv[1] = yv[2];
-		yv[2] = yv[3];
-		yv[3] = yv[4];
-		yv[4] = yv[5];
-		yv[5] = yv[6];
-		yv[6] = (xv[0] + xv[6]) + 6 * (xv[1] + xv[5]) + 15 * (xv[2] + xv[4])
-				+ 20 * xv[3] + (-0.2386551347 * yv[0]) + (1.7710414118 * yv[1])
-				+ (-5.5245979401 * yv[2]) + (9.2819800973 * yv[3])
-				+ (-8.8701476352 * yv[4]) + (4.5790768167 * yv[5]);
-		return yv[6];
-	}
+
+#define NZEROS 3
+#define NPOLES 3
+#define GAIN   3.681602264e+02
+
+	static float xv[NZEROS + 1], yv[NPOLES + 1];
+
+	xv[0] = xv[1];
+	xv[1] = xv[2];
+	xv[2] = xv[3];
+	xv[3] = in / GAIN;
+	yv[0] = yv[1];
+	yv[1] = yv[2];
+	yv[2] = yv[3];
+	yv[3] = (xv[0] + xv[3]) + 3 * (xv[1] + xv[2]) + (0.5400688125 * yv[0])
+			+ (-1.9504598825 * yv[1]) + (2.3886614006 * yv[2]);
+	return yv[3];
+
 }
 
 /*
- * Butterworth oder 3 low pass cutoff 12khz
- * Digital filter designed by mkfilter/mkshape/gencode   A.J. Fisher
- Command line: /www/usr/fisher/helpers/mkfilter -Bu -Lp -o 6 -a 5.8593750000e-03 0.0000000000e+00 -l */
-static inline  double lock_filter(double in) {
-#define NZEROS2 3
-#define NPOLES2 3
-#define GAIN2   1.662796182e+05
+ * Butterworth oder 3 low pass cutoff 10hz
+ */
+static inline double lock_filter(double in) {
+#define NZEROS1 3
+#define NPOLES1 3
+#define GAIN1   2.856028586e+05
 
-	static float xv[NZEROS2 + 1], yv[NPOLES2 + 1];
+	static float xv[NZEROS1 + 1], yv[NPOLES1 + 1];
+	xv[0] = xv[1];
+	xv[1] = xv[2];
+	xv[2] = xv[3];
+	xv[3] = in / GAIN1;
+	yv[0] = yv[1];
+	yv[1] = yv[2];
+	yv[2] = yv[3];
+	yv[3] = (xv[0] + xv[3]) + 3 * (xv[1] + xv[2]) + (0.9404830634 * yv[0])
+			+ (-2.8791542471 * yv[1]) + (2.9386431728 * yv[2]);
+	return yv[3];
 
-	{
-		xv[0] = xv[1];
-		xv[1] = xv[2];
-		xv[2] = xv[3];
-		xv[3] = in / GAIN2;
-		yv[0] = yv[1];
-		yv[1] = yv[2];
-		yv[2] = yv[3];
-		yv[3] = (xv[0] + xv[3]) + 3 * (xv[1] + xv[2]) + (0.9290105002 * yv[0])
-				+ (-2.8554316873 * yv[1]) + (2.9263730753 * yv[2]);
-		return yv[3];
-	}
 }
 
 struct frame_state {
-	unsigned int  bit_count;
-	unsigned int  data_len;
+	unsigned int bit_count;
+	unsigned int data_len;
 	unsigned char data[64];
 
 	bool last_bit;
@@ -141,8 +185,6 @@ struct frame_state {
 		B_PREAMP, B_SOF0, B_SOF1, B_DATA
 	} state_b;
 } fs;
-
-
 
 enum {
 	S_IDLE, S_PREAMP, S_BITLOCK
@@ -156,18 +198,57 @@ double wc = 0; //  # center frequency
 bool last_logic = false;
 const int lead_in = 10;
 
+/**
+ * This program takes the output of rtl_sdr into stdin and decodes Z-Wave
+ * frames. The sample rate is assumed to be 2.048 MHz
+ */
 
-int main() {
+/* 9.6k frame  of length  64 + preamble 10 */
+#define SAMPLERATE 2048000
+#define MAX_FRAME_DURATION (64+10)*8*(SAMPLERATE/9600)
+int main(int argc, char** argv) {
 	double f, s, lock;
+	size_t s_num = 0; //Sample number
+	size_t f_num = 0; //Z-wave frame number
+	complex<unsigned char> recorder[MAX_FRAME_DURATION]; //Cyclic buffer to store recorded frames
+	int rec_ptr = 0;
+	int frame_start;
 
+	int enable_recorder, ch, fd;
+
+	enable_recorder = 0;
+	while ((ch = getopt(argc, argv, "r")) != -1) {
+		switch (ch) {
+		case 'r':
+			enable_recorder = 1;
+			break;
+		case '?':
+		default:
+			printf("Usage: %s [-r] \n", argv[0]);
+			printf("\t-r enable frame recorder\n");
+			exit(-1);
+		}
+	}
 
 	open_wirreshark();
-
 
 	while (!feof(stdin)) {
 		unsigned char g[2];
 		fread(g, 2, 1, stdin);
-		f = fsk_demodulator(g[0] - 127, g[1] - 127);
+
+		/*Frame recorder for debugging */
+		recorder[rec_ptr++] = complex<unsigned char>(g[0], g[1]);
+		if (rec_ptr > MAX_FRAME_DURATION)
+			rec_ptr = 0;
+
+		double re = (g[0] - 127);
+		double im = (g[1] - 127);
+		s_num++;
+
+		//re = bw_filter_re(re);
+		//im = bw_filter_im(im);
+
+		f = fsk_demodulator(re, im);
 
 		s = freq_filter(f);
 
@@ -183,13 +264,14 @@ int main() {
 		/* TODO come up with a better lock detection
 		 * just using lock < 0 as lock condition, seems rather arbitrary
 		 */
-		if (lock < 0.0) {
+		if (fabs(lock) > 0.001) {
 			bool logic = (s - wc) > 0;
 
 			if (state == S_IDLE) {
 				state = S_PREAMP;
 				pre_cnt = 0;
 				pre_len = 0;
+				frame_start = rec_ptr;
 			} else if (state == S_PREAMP) {
 				wc = lock;
 				pre_len = pre_len + 1;
@@ -198,23 +280,23 @@ int main() {
 
 					if (pre_cnt == lead_in) {  //# skip the first lead_in
 						pre_len = 0;
-					} else if (pre_cnt > 30) {
+					} else if (pre_cnt > 60) { //Minimum preamble length is 10 bytes i.e 80 bits
 						state = S_BITLOCK;
 						fs.state_b = fs.B_PREAMP;
 						fs.last_bit = not logic;
 
 						bit_len = double(pre_len) / (pre_cnt - lead_in);
-						bit_cnt = bit_len / 2.0;
+						bit_cnt = 3 * bit_len / 4.0;
 					}
 				}
 			} else if (state == S_BITLOCK) {
 				if (logic ^ last_logic) {
-					bit_cnt = bit_len / 2.0; //#Re-sync on edges
+					bit_cnt = 3 * bit_len / 4.0; //#Re-sync on edges
 				} else {
 					bit_cnt = bit_cnt + 1.0;
 				}
 				if (bit_cnt >= bit_len) { // # new bit
-					//Sub statemachine
+					//Sub state machine
 					if (fs.state_b == fs.B_PREAMP) {
 						if (logic and fs.last_bit) {
 							fs.state_b = fs.B_SOF1;
@@ -228,7 +310,7 @@ int main() {
 								fs.state_b = fs.B_DATA;
 							}
 						} else {
-							//printf("SOF0 error \n");
+							//printf("SOF0 error bit len %f\n",bit_len);
 							state = S_IDLE;
 						}
 					} else if (fs.state_b == fs.B_SOF1) {
@@ -242,8 +324,9 @@ int main() {
 							state = S_IDLE;
 						}
 					} else if (fs.state_b == fs.B_DATA) { //Payload bit
-						fs.data[fs.data_len] = (fs.data[fs.data_len] << 1) | logic;
-						if( (fs.b_cnt & 7) == 0) {
+						fs.data[fs.data_len] = (fs.data[fs.data_len] << 1)
+								| logic;
+						if ((fs.b_cnt & 7) == 0) {
 							fs.data[++fs.data_len] = 0;
 						}
 					}
@@ -253,13 +336,34 @@ int main() {
 				}
 			}
 			last_logic = logic;
-		}
-		else { //# No LOCKs
+		} else { //# No LOCKs
 			if (state == S_BITLOCK && fs.state_b == fs.B_DATA) {
+
+				f_num++;
 				//zwave_print(fs.data,fs.data_len);
-				write_wiresark(fs.data,fs.data_len, bit_len < 30 ? 2 : 1 );
+				write_wiresark(fs.data, fs.data_len,
+						bit_len < 30 ? 2 : bit_len < 100 ? 1 : 0);
 				//frame = bits2bytes(bits)
 				//zwave_print(frame)
+				printf("Frame num %lu ends on sample %lu\n", f_num, s_num);
+
+				if (enable_recorder) {
+					char rec_name[256];
+					snprintf(rec_name, sizeof(rec_name), "frame%lu.dat", f_num);
+					FILE *f = fopen(rec_name, "w");
+					if (rec_ptr > frame_start) {
+						fwrite(&recorder[frame_start],
+								sizeof(complex<unsigned char> ),
+								rec_ptr - frame_start, f);
+					} else {
+						fwrite(&recorder[frame_start],
+								sizeof(complex<unsigned char> ),
+								MAX_FRAME_DURATION - frame_start, f);
+						fwrite(&recorder[0], sizeof(complex<unsigned char> ),
+								rec_ptr,f);
+					}
+					fclose(f);
+				}
 			}
 			state = S_IDLE;
 		}
