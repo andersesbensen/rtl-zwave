@@ -10,14 +10,7 @@ from scipy.signal import firwin
 import array
 import bitarray
 def zwave_print(frame):
-    if(len(frame) < 7):
-        print "Short: " + frame.encode("hex")
-    else:
-        l = ord(frame[7])
-        print "Frame: " + frame[0:l].encode("hex"),
-        print "  trailer " + frame[l+1:].encode("hex"),
-#        print " CRC", hex(CrcSum16(frame[0:l-2]))        
-        print
+    print "Frame: " + frame.encode("hex")
     
 def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
@@ -51,7 +44,7 @@ y1 = signal.lfilter(b, a, y2)
 
 Wn = 10.1e3 / float(samp)
 #Wn = 2.0e3 / float(samp)
-b, a = signal.butter(3, Wn, 'low')
+b, a = signal.butter(4, Wn, 'low')
 
 lock_det = signal.lfilter(b, a, y2)
 

@@ -10,14 +10,7 @@ from scipy.signal import firwin
 
 
 def zwave_print(frame):
-    if(len(frame) < 7):
-        print "Short: " + frame.encode("hex")
-    else:
-        l = ord(frame[7])
-        print "Frame: " + frame[0:l].encode("hex"),
-        print "  trailer " + frame[l+1:].encode("hex"),
-#        print " CRC", hex(CrcSum16(frame[0:l-2]))        
-        print
+    print "Frame: " + frame.encode("hex")
     
 def bits2bytes(bits):
     r = ""
@@ -60,16 +53,36 @@ n = 0
 
 sigre = []
 sigim = []
+
+def rotate_90(j,re,im):    
+    if(j==1):
+      tmp = re
+      re = im
+      im = tmp
+    elif(j==2):
+      re = 255 - re
+      im = 255 - im
+    elif(j==3):
+      tmp = 255 - re
+      re = im
+      im =tmp
+    return (re,im)
+
 try:
   while(True):
-    n = n + 1
     (re, im) = unpack("2B", f.read(2))
     
+    # "rotate 90" whatever that means?
+    j = n & 3
+
+    re,im = rotate_90(j,re,im)
     re = re - 127
     im = im - 127
 
     sigre.append(re)
     sigim.append(im)
+
+    n = n + 1
 
     #if(n >= 50000):
     #    break;
@@ -163,24 +176,25 @@ def aes_fsk(sig):
 
 # FSK decoder
 def atan_fsk(sig):
-  q1 = 0
-  q2 = 0
+  s1 = 0
   y2=[]
   for s in sig:
-    q = np.angle(s)
-    k = -(q - q2) / 2.0 
-    q2 = q1
-    q1 = q
+    k = np.angle(s*np.conj(s1))
+    s1 = s
 
     y2.append(k)
   return y2
 
-y2 = aes_fsk(sig)
-#y2 = atan_fsk(sig)
+
+
+
+#y2 = aes_fsk(sig)
+y2 = atan_fsk(sig)
+#y2 = pll_fsk(sig)
 
 Wn = 101e3 / float(samp)
 #Wn = 2*9.6e3 / float(samp)
-b, a = signal.butter(6, Wn, 'low')
+b, a = signal.butter(12, Wn, 'low')
 y1 = signal.lfilter(b, a, y2)
 
 Wn = 10.1e3 / float(samp)
