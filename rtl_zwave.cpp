@@ -226,7 +226,7 @@ double bit_len = 0;
 double bit_cnt = 0.0;
 double wc = 0; //  # center frequency
 bool last_logic = false;
-bool signal = false;
+bool hasSignal = false;
 bool msc; //Manchester
 const int lead_in = 10;
 double dr; //Datarate
@@ -315,14 +315,14 @@ int main(int argc, char** argv)
           # 1/2 seperation, TODO calculate 1/2 seperation
            */
           /*if(state == S_BITLOCK) {
-            signal = fabs(wc - lock) < 0.1;
+            hasSignal = fabs(wc - lock) < 0.1;
             printf("lock lost %f\n",fabs(wc - lock));
             } else {*/
-          signal = fabs(lock) > 0.01;
+          hasSignal = fabs(lock) > 0.01;
           /*}*/
 
 
-          if (signal)
+          if (hasSignal)
             {
               bool logic = (s - wc) < 0;
 
