@@ -6,8 +6,11 @@ the program will pipe the decoded frames to wireshark.
 G.9959 frames are FSK/NRZ and FSK/Manchester encoded. Supported bitrates are 
 9.6kbps Manchester / 40kbps NRZ / 100kbps NRZ
 
+### EU
 
-    rtl_sdr -f 868.1e6 -s 2048000 -g 25  - |./rtl_zniffer
+    rtl_sdr -f 868.1e6 -s 2048000 -g 25  - |./rtl_zwave
+
+
     
 ### USA
 
