@@ -8,6 +8,10 @@ G.9959 frames are FSK/NRZ and FSK/Manchester encoded. Supported bitrates are
 
 
     rtl_sdr -f 868.1e6 -s 2048000 -g 25  - |./rtl_zniffer
+    
+### USA
+
+	rtl_sdr -f 908.42e6 -s 2048000 -g 25  - |./rtl_zwave
 
 This is my first signaling processing project, so it might not be perfect. 
-I'm pretty sure there is room for impovement in the algorithms. 
+I'm pretty sure there is room for improvement in the algorithms. 
